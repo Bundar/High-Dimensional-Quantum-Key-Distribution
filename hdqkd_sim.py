@@ -4,6 +4,7 @@
 
 import random
 import math
+import matplotlib.pyplot as plt
 
 # time is partitioned in frames consisting of n time units. We take n to be a power
 # of two.
@@ -44,16 +45,6 @@ def p_spdc(p):
         return 1
     else:
         return 0
-
-# Returns time unit in which photon has arrived. 
-def spdc_per_bin(time_bins_range):
-    return random.randint(0,time_bins_range-1)
-
-# Returns time unit in which photon has arrived. 
-def spdc_per_unit(time_units_range):
-    unit = random.randint(0,time_units_range-1)
-    bin_num = int(unit / TIME_UNITS_PER_BIN)
-    return bin_num
 
 # Bins are labeled by log(n/k) bit strings
 def getBitString(binNum):
@@ -97,7 +88,7 @@ def simple_binning(time_window):
         # figure out if we keep this frame
         num_occupied = len(occupied_bins)
         if num_occupied != 1 and num_occupied != BINS_PER_FRAME-1:
-            # drop frame.. include analytics later TODO
+            # drop frame..
             print("Frame "+str(i)+" Dropped: " + print_time_window(frame))
         else:
             # use frame
@@ -114,56 +105,39 @@ def print_time_window(time_window):
         s+=str(i)
     return s
 
-# experiment 1 w old spdc
-def exp_1():
-    print("Testing 4 Frames 2 units per bin 8 units per frame, w spdc per unit")
-    key_length = 128 # bits
+# calculates the max # of bits per unit that can be extracted from mthe timestamps 
+def calc_h(p):
+    return -p * math.log(p,2) - (1-p)*math.log(1-p,2)
+
+# function to calculate photon utilization for simple binning
+def calc_photon_utilization(p, n, k):
+    FRAME_COUNT = 1
+    TIME_UNITS_PER_FRAME = n # n 
+    TIME_UNITS_PER_BIN = k # k
+
+    BINS_PER_FRAME = TIME_UNITS_PER_FRAME / TIME_UNITS_PER_BIN
+    TOTAL_BIN_COUNT = TIME_UNITS_PER_FRAME*FRAME_COUNT/TIME_UNITS_PER_BIN # n/k
+
+    key_length = 128
     generated_bits = 0
-    spdc_source = ''
     raw_key = ''
     count = 0
+
+    total_time_units = 0
+
     while generated_bits < key_length:
         count+=1
-        a = spdc_per_bin(TOTAL_BIN_COUNT)
-        spdc_source+=str(a)
-        raw_key_partial = getBitString(a)
-        print("Iter: " + str(count) + " a: " + str(a) + " Raw Partial Key: " + raw_key_partial)
+        time_window = get_photon_data(p)
+        total_time_units += len(time_window)
+        raw_key_partial = simple_binning(time_window)
         raw_key += raw_key_partial
         generated_bits += len(raw_key_partial)
 
-    print("\nGenerated Key: " + raw_key)
-    print("\nratio of ones:zeores in raw key: " + str(freq_anal(raw_key)))
-    print("Shannon Entropy of raw key: " + str(entropy(raw_key)))
+    raw_key_rate =  key_length / total_time_units
+    optimal_entropy = calc_h(p)
+    photon_utilization = raw_key_rate / optimal_entropy
 
-    print("SPDC output: " + spdc_source)
-    print("Shannon Entropy of spdc sim souorce: " + str(entropy(spdc_source)))
-    print("")
-
-# experiment 2 w old spdc
-def exp_2():
-    print("Testing 4 Frames 2 units per bin 8 units per frame, w spdc per bin")
-    key_length = 128 # bits
-    generated_bits = 0
-    spdc_source = ''
-    raw_key = ''
-    count = 0
-    while generated_bits < key_length:
-        count+=1
-        a = spdc_per_unit(TIME_UNITS_PER_FRAME*FRAME_COUNT)
-        spdc_source+=str(a)
-        raw_key_partial = getBitString(a)
-        print("Iter: " + str(count) + " a: " + str(a) + " Raw Partial Key: " + raw_key_partial)
-        raw_key += raw_key_partial
-        generated_bits += len(raw_key_partial)
-
-    print("\nGenerated Key: " + raw_key)
-    print("\nratio of ones:zeores in raw key: " + str(freq_anal(raw_key)))
-    print("Shannon Entropy of raw key: " + str(entropy(raw_key)))
-
-    print("SPDC output: " + spdc_source)
-    print("Shannon Entropy of spdc sim souorce: " + str(entropy(spdc_source)))
-    print("")
-
+    return photon_utilization
 
 #trying out the new method for spdc simulation
 def simple_binning_experiment():
@@ -171,27 +145,32 @@ def simple_binning_experiment():
     p = 0.15
     key_length = 128 # bits
     generated_bits = 0
-    spdc_source = ''
     raw_key = ''
     count = 0
+
+    total_time_units = 0 # for analysis of raw key rate.. r key rate = key_length / total_time_units
+
     while generated_bits < key_length:
         count+=1
         time_window = get_photon_data(p)
-        
+        total_time_units += len(time_window)
         raw_key_partial = simple_binning(time_window)
 
         print("Iter: " + str(count) + " Time Window: \n" + print_time_window(time_window) + "\nRaw Partial Key: " + raw_key_partial)
         raw_key += raw_key_partial
         generated_bits += len(raw_key_partial)
-
+    
     print("\nGenerated Key: " + raw_key)
     print("\nratio of ones:zeores in raw key: " + str(freq_anal(raw_key)))
     print("Shannon Entropy of raw key: " + str(entropy(raw_key)))
-
-    print("SPDC output: " + spdc_source)
-    print("Shannon Entropy of spdc sim souorce: " + str(entropy(spdc_source)))
-    print("")
-
+    
+    print("\nn = "+ str(TIME_UNITS_PER_FRAME) + ", k = " + str(TIME_UNITS_PER_BIN))
+    print("Probability p: " + str(p))
+    raw_key_rate =  key_length / total_time_units
+    print("Raw Key Rate: " + str(raw_key_rate))
+    optimal_entropy = calc_h(p)
+    print("h(p) = " +str(optimal_entropy))
+    print("Photon Utilization: " +  str(raw_key_rate / optimal_entropy))
 
 # just to test the output
 def test_bit_string_gen():
@@ -199,10 +178,43 @@ def test_bit_string_gen():
         a = spdc_per_bin(TOTAL_BIN_COUNT)
         print(str(a) + " : " + getBitString(a))
 
+# generate graphs fig 2
+def fig_2_graphs():
+    # genreate graphs from the paper figure 2
+    p_step = [x for x in range(0,1,0.1)]
+    for n in [8, 16, 64]:
+        # data x,y 
+        plt.title("N = " + str(n))
+        plt.xlabel("Probability(p)")
+        plt.ylabel("Photon Utilization")
+        
+        data_k1 = []
+        data_k2 = []
+        data_k4 = []
+        #y = [x*0.05 for x in range(0,12)]
+
+        for k in [1,2,4]:
+            photon_u_per_k = []
+            for p in p_step:
+                photon_u_per_k.append(calc_photon_utilization(p, n, k))
+            if k == 1:
+                data_k1 = photon_u_per_k
+            if k == 2:
+                data_k2 = photon_u_per_k
+            else:
+                data_k4 = photon_u_per_k
+        
+        # add data sets to graph
+        plt.plot(p_step, data_k1, label = "k = 1")
+        plt.plot(p_step, data_k2, label = "k = 2")
+        plt.plot(p_step, data_k4, label = "k = 4")
+        # plot
+        plt.show()
+
 
 def main():
-    simple_binning_experiment()
-    
+    #simple_binning_experiment()
+    fig_2_graphs()
 
     
 if __name__ == "__main__":

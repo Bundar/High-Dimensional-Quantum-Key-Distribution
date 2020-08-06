@@ -14,6 +14,7 @@ TIME_UNITS_PER_FRAME = 8 # n
 # k ≤ n time units, and we are free to choose k. Note that k also needs to be a power of two in order
 # for n to be divisible by k.
 TIME_UNITS_PER_BIN = 2 # k
+BINS_PER_FRAME = TIME_UNITS_PER_FRAME / TIME_UNITS_PER_BIN
 TOTAL_BIN_COUNT = TIME_UNITS_PER_FRAME*FRAME_COUNT/TIME_UNITS_PER_BIN # n/k
 
 def entropy(string):
@@ -35,8 +36,9 @@ def freq_anal(rawKey):
         else:
             ones+=1
     return ones/zeroes
+
 # better spdc prob p of being in bin
-def better_spdc(p):
+def p_spdc(p):
     r = random.random()
     if r < p:
         return 1
@@ -55,23 +57,63 @@ def spdc_per_unit(time_units_range):
 
 # Bins are labeled by log(n/k) bit strings
 def getBitString(binNum):
-    return ('{0:0'+str(int(math.log(TOTAL_BIN_COUNT,2)))+'b}').format(binNum)
+    return ('{0:0'+str(int(math.log(int(BINS_PER_FRAME),2)))+'b}').format(binNum)
+
+# returns the indexes of the occupied bins in this frame
+def get_occupied_bins(frame):
+    bin_indexes = []
+    for i,u in enumerate(frame):
+        if u == 1:
+            # unit occupied
+            bin_indexes.append(int(i/TIME_UNITS_PER_BIN))
+    
+    return list(set(bin_indexes)) # removes duplicates. important as it allows multiple photons to arrive in the same bin
+
+# returns index of bin that is left out
+def get_unoccupied_bin(occupied_bins):
+    for i in range(0, int(BINS_PER_FRAME)):
+        if i not in occupied_bins:
+            return i
+
+# generate time window... poll SPDC
+def get_photon_data(p):
+    time_window = []
+    for i in range(0, int(TIME_UNITS_PER_FRAME * FRAME_COUNT)):
+        spdc_result = p_spdc(p)
+        time_window.append(spdc_result)
+    return time_window
+
 
 # gets the partial kkey from the time window
 def simple_binning(time_window):
-    for i in range(0, FRAME_COUNT): # 0 1 2 3
-        partial_frame_key = ''
-        for j in range(0, TIME_UNITS_PER_FRAME/TIME_UNITS_PER_BIN): # 0 1 2 3
-            detected = 0
-            if time_window[i*FRAME_COUNT+j] or time_window[i*FRAME_COUNT + j + 1]: # only works for bins size 2 TODO
-                detected+=1
-                partial_key = getBitString(i*FRAME_COUNT+j)
-                partial_frame_key += partial_key
-
-    return 'a'
-
-
+    raw_key = ''
+    for i in range(0, FRAME_COUNT):
+        # calc frame  by frame
+        frame = time_window[i*TIME_UNITS_PER_FRAME:(i+1)*TIME_UNITS_PER_FRAME]
         
+        # find the bins in the frame which are occupied
+        occupied_bins = get_occupied_bins(frame)
+        
+        # figure out if we keep this frame
+        num_occupied = len(occupied_bins)
+        if num_occupied != 1 and num_occupied != BINS_PER_FRAME-1:
+            # drop frame.. include analytics later TODO
+            print("Frame "+str(i)+" Dropped: " + print_time_window(frame))
+        else:
+            # use frame
+            if num_occupied == 1:
+                raw_key += getBitString(occupied_bins[0])
+            else:
+                raw_key += getBitString(get_unoccupied_bin(occupied_bins))
+    return raw_key
+        
+# prints out the time window data
+def print_time_window(time_window):
+    s = ''
+    for i in time_window:
+        s+=str(i)
+    return s
+
 # experiment 1 w old spdc
 def exp_1():
     print("Testing 4 Frames 2 units per bin 8 units per frame, w spdc per unit")
@@ -124,8 +166,8 @@ def exp_2():
 
 
 #trying out the new method for spdc simulation
-def exp_3_new_method():
-    print("Testing 4 Frames 2 units per bin 8 units per frame, w spdc per bin")
+def simple_binning_experiment():
+    print("Testing 4 Frames 2 units per bin 8 units per frame, w spdc per unit")
     p = 0.15
     key_length = 128 # bits
     generated_bits = 0
@@ -134,14 +176,11 @@ def exp_3_new_method():
     count = 0
     while generated_bits < key_length:
         count+=1
-        time_window = []
-        for i in range(0,TIME_UNITS_PER_FRAME*FRAME_COUNT):
-            a = better_spdc(p)
-            time_window = time_window + a
+        time_window = get_photon_data(p)
         
         raw_key_partial = simple_binning(time_window)
 
-        print("Iter: " + str(count) + " a: " + str(a) + " Raw Partial Key: " + raw_key_partial)
+        print("Iter: " + str(count) + " Time Window: \n" + print_time_window(time_window) + "\nRaw Partial Key: " + raw_key_partial)
         raw_key += raw_key_partial
         generated_bits += len(raw_key_partial)
 
@@ -162,8 +201,7 @@ def test_bit_string_gen():
 
 
 def main():
-    exp_3_new_method()
-
+    simple_binning_experiment()
     
 
     

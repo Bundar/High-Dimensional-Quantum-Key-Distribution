@@ -2,6 +2,7 @@
 # Dunbar Birnie IV
 # Rutgers ECE
 
+import numpy as np
 import random
 import math
 import matplotlib.pyplot as plt
@@ -89,14 +90,15 @@ def simple_binning(time_window):
         num_occupied = len(occupied_bins)
         if num_occupied != 1 and num_occupied != BINS_PER_FRAME-1:
             # drop frame..
-            print("Frame "+str(i)+" Dropped: " + print_time_window(frame))
+            framedropped = 1
+            # print("Frame "+str(i)+" Dropped: " + print_time_window(frame))
         else:
             # use frame
             if num_occupied == 1:
                 raw_key += getBitString(occupied_bins[0])
             else:
                 raw_key += getBitString(get_unoccupied_bin(occupied_bins))
-    return raw_key
+    return raw_key # TODO what if all frames are dropped
         
 # prints out the time window data
 def print_time_window(time_window):
@@ -107,7 +109,7 @@ def print_time_window(time_window):
 
 # calculates the max # of bits per unit that can be extracted from mthe timestamps 
 def calc_h(p):
-    return -p * math.log(p,2) - (1-p)*math.log(1-p,2)
+    return -p*math.log(p,2) - (1-p)*math.log(1-p,2)
 
 # function to calculate photon utilization for simple binning
 def calc_photon_utilization(p, n, k):
@@ -118,7 +120,7 @@ def calc_photon_utilization(p, n, k):
     BINS_PER_FRAME = TIME_UNITS_PER_FRAME / TIME_UNITS_PER_BIN
     TOTAL_BIN_COUNT = TIME_UNITS_PER_FRAME*FRAME_COUNT/TIME_UNITS_PER_BIN # n/k
 
-    key_length = 128
+    key_length = 32
     generated_bits = 0
     raw_key = ''
     count = 0
@@ -138,6 +140,115 @@ def calc_photon_utilization(p, n, k):
     photon_utilization = raw_key_rate / optimal_entropy
 
     return photon_utilization
+
+#######################################################################
+
+# function to calculate photon utilization for simple binning. n units per frame, k units per bin
+def calc_photon_utilization_single_frame(p, n, k):
+    key_length = 1024
+    generated_bits = 0
+    raw_key = ''
+    total_time_units = 0
+
+    while generated_bits < key_length:
+        # generate SPDC photon arrivals in frame
+        frame = get_photon_data_single_frame(p, n)
+
+        # increment time passed to calculate raw key rate later
+        total_time_units += len(frame)
+        
+        # calculate raw key bits
+        raw_key_partial = simple_binning_single_frame(frame, n, k)
+        
+        # construct total key from partial raw keys
+        raw_key += raw_key_partial
+        
+        # increment stopping condition
+        generated_bits += len(raw_key_partial)
+
+    raw_key_rate =  generated_bits / total_time_units
+    optimal_entropy = calc_h(p)
+    photon_utilization = raw_key_rate / optimal_entropy
+
+    return photon_utilization
+
+# calculates the max # of bits per unit that can be extracted from mthe timestamps 
+def calc_h(p):
+    return -p*math.log(p,2) - (1-p)*math.log(1-p,2)
+
+# gets the partial key from the time window
+def simple_binning_single_frame(frame, n, k):
+    key = ''
+
+    # find the bins in the frame which are occupied
+    occupied_bins = get_occupied_bins_in_frame(frame, k)
+        
+    # figure out if we keep this frame
+    num_occupied = len(occupied_bins)
+    if num_occupied != 1 and num_occupied != BINS_PER_FRAME-1:
+        return key # drop frame
+    
+    unique_bin_index = -1
+
+    # use frame
+    if num_occupied == 1:
+        unique_bin_index = occupied_bins[0]
+    else:
+        unique_bin_index = get_unoccupied_bin(occupied_bins, n, k)
+    
+    return getBitString(unique_bin_index, n, k)
+
+# returns the indexes of the occupied bins in this frame
+def get_occupied_bins_in_frame(frame, k):
+    bin_indexes = []
+    for i,u in enumerate(frame):
+        if u == 1:
+            # unit occupied
+            bin_indexes.append(int(i/k))
+    
+    return list(set(bin_indexes)) # removes duplicates. important as it allows multiple photons to arrive in the same bin
+
+# returns index of bin that is left out
+def get_unoccupied_bin(occupied_bins, n, k):
+    for i in range(0, int(n/k)):
+        if i not in occupied_bins:
+            return i
+
+# Bins are labeled by log(n/k) bit strings
+def getBitString(binNum, n, k):
+    return ('{0:0'+str(int(math.log(int(n/k),2)))+'b}').format(binNum)
+
+# generate time window... poll SPDC
+def get_photon_data_single_frame(p, n):
+    return [p_spdc(p) for i in range(0,n)]
+
+# Generate specific graph for case n = 8, k = 1 ... 
+def graph_a():
+    p_range = np.arange(0, 0.94, 0.01)
+    plt.title("N = 8, K = 1")
+    plt.xlabel("Probability(p)")
+    plt.ylabel("Photon Utilization")
+    photon_utilization_per_p = [0]
+
+    for p in p_range:
+        print(p)
+        if p == 0:
+            continue
+        else:
+            pu = calc_photon_utilization_single_frame(p, 8, 1)
+            photon_utilization_per_p.append(pu)
+    
+    plt.plot(p_range, photon_utilization_per_p, label = "k = 1")
+    plt.show()
+
+####
+
+
+
+
+
+
+
 
 #trying out the new method for spdc simulation
 def simple_binning_experiment():
@@ -172,16 +283,15 @@ def simple_binning_experiment():
     print("h(p) = " +str(optimal_entropy))
     print("Photon Utilization: " +  str(raw_key_rate / optimal_entropy))
 
-# just to test the output
-def test_bit_string_gen():
-    for i in range(4):
-        a = spdc_per_bin(TOTAL_BIN_COUNT)
-        print(str(a) + " : " + getBitString(a))
+
+
+
+
 
 # generate graphs fig 2
 def fig_2_graphs():
     # genreate graphs from the paper figure 2
-    p_step = [x for x in range(0,1,0.1)]
+    p_step = np.arange(0.01,1,0.01)#[x*0.1 for x in range(1,10, 1)]
     for n in [8, 16, 64]:
         # data x,y 
         plt.title("N = " + str(n))
@@ -214,8 +324,8 @@ def fig_2_graphs():
 
 def main():
     #simple_binning_experiment()
-    fig_2_graphs()
-
+    #fig_2_graphs()
+    graph_a()
     
 if __name__ == "__main__":
     main()
